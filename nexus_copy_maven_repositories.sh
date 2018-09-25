@@ -92,6 +92,7 @@ function mvnPublishFile {
     if [ -z ${pomFile} ]; then
         echo "mvn deploy:deploy-file -Durl=https://${TARGET_HOST}/repository/${REPO} -DgeneratePom=false -DartifactId=${mvnArtifactId} -Dversion=${mvnVersion} -DgroupId=${mvnGroupId} -DartifactId=${mvnArtifactId} -DrepositoryId=nexus ${fileArgs}"
         mvn deploy:deploy-file -Durl=https://${TARGET_HOST}/repository/${REPO} -DgeneratePom=false -DartifactId=${mvnArtifactId} -Dversion=${mvnVersion} -DgroupId=${mvnGroupId} -DartifactId=${mvnArtifactId} -DrepositoryId=nexus ${fileArgs}
+        exitcode=$?
 
 #    #maybe pom and one file
 #    elif [ ${classifiers} == "null" ]; then
@@ -100,7 +101,12 @@ function mvnPublishFile {
     else
         echo "mvn deploy:deploy-file -Durl=https://${TARGET_HOST}/repository/${REPO} -DgeneratePom=false -DartifactId=${mvnArtifactId} -Dversion=${mvnVersion} -DgroupId=${mvnGroupId} -DartifactId=${mvnArtifactId} -DrepositoryId=nexus -DpomFile=${pomFile} ${fileArgs}"
         mvn deploy:deploy-file -Durl=https://${TARGET_HOST}/repository/${REPO} -DgeneratePom=false -DartifactId=${mvnArtifactId} -Dversion=${mvnVersion} -DgroupId=${mvnGroupId} -DartifactId=${mvnArtifactId} -DrepositoryId=nexus -DpomFile=${pomFile} ${fileArgs}
+        exitcode=$?
     fi
+    if [ ${exitcode} -ne 0 ]; then
+        echo "FAILED TO migrate: ${mvnArtifactId} ${mvnGroupId}-${mvnVersion}" >>./failed2bemigrated-${REPO}.txt
+    fi
+    return ${exitcode}
 }
 
 function fileIsChecksum {
@@ -123,7 +129,9 @@ function downloadFile {
 
 function cleanup {
     echo "INFO: cleanup function started"
-    files_to_be_deleted="temp_file.json this_component.json all_items_in_${REPO}.txt ./assets ~/.m2/settings.xml"
+    files_to_be_deleted="temp_file.json this_component.json all_items_in_${REPO}.txt ./assets ~/.m2/settings.xml ./failed2bemigrated-${REPO}.txt"
+    echo "Migration failures for Repository ${REPO}"
+    cat ./failed2bemigrated-${REPO}.txt
     for file_or_folder in $(echo ${files_to_be_deleted}); do
         if [ -e ${file_or_folder} ]; then
             echo "INFO: ${file_or_folder} exists... deleting4cleanup"
@@ -198,7 +206,7 @@ for componentID in $(cat all_items_in_${REPO}.txt); do
     this_pathsCounted=$(echo ${this_paths}|wc -l)
     mkdir -p ./assets/${componentID}
 
-    echo "this_paths: ${this_paths}"
+    #echo "this_paths: ${this_paths}"
 
     filepathWithArgs=""
     counter=1
@@ -210,10 +218,10 @@ for componentID in $(cat all_items_in_${REPO}.txt); do
     mvnPomfile=""     #only for mvn
     #Formulardaten zusammenbauen und dateien runterladen
     for i in $(echo -e ${this_paths}); do
-        echo "doing File: ${i}"
+        #echo "doing File: ${i}"
         #detect wether md5sum-file or sha-file and leave out
         if [[ ${i} =~ (\.md5$|\.sha1$) ]]; then
-            echo "debug: md5sumfile detected: ${i}"
+            #echo "debug: md5sumfile detected: ${i}"
             continue
         fi
 
@@ -234,7 +242,6 @@ for componentID in $(cat all_items_in_${REPO}.txt); do
 
         #extract classifeier
 
-        # I hate myself for the next line
         classifier="$(echo -e ${i} | awk -F '/' '{print $NF}'|sed "s/${this_name}-${this_version}[-]*//" | sed "s/\....$//" )"
         echo "classifier ${classifier}"
         #this one is needed for curl-upload
@@ -242,7 +249,7 @@ for componentID in $(cat all_items_in_${REPO}.txt); do
         #    filepathWithArgs="${filepathWithArgs}-F \"maven2.asset${counter}.classifier=${classifier}\" "
         #fi
         #this part is for mvn
-        echo "mvnClassifiers: ${mvnClassifiers}"
+        #echo "mvnClassifiers: ${mvnClassifiers}"
         if [ "${mvnClassifiers}" = "null" ]; then
             echo "You should not come here. mvnClassifiers ${mvnClassifiers} matches for string 'null'"
             echo "This means: either there is already a file or this Component has no classifiers"
